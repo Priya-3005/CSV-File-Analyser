@@ -142,7 +142,175 @@ if uploaded_file is not None:
         )
         ax.set_title(f"Top {top_n} categories in {selected_col}")
 
-    st.pyplot(fig)
+    st.pyplot(fig) 
+
+    st.markdown("---") 
+
+    st.subheader("🧠 Auto Insights") 
+
+    # Missing values insight
+    missing = df_selected.isnull().sum()
+    missing_cols = missing[missing > 0].index.tolist()
+
+    # High variance (numeric)
+    numeric_df = df_selected.select_dtypes(include=['float64', 'int64'])
+    high_variance_cols = [] 
+
+    for col in numeric_df.columns:
+        if numeric_df[col].std() > numeric_df[col].mean(): 
+            high_variance_cols.append(col)
+            #insights.append(f"📊 High variance detected in '{col}'")
+
+    # Strong correlation 
+    strong_corr_pairs = []
+    if len(numeric_df.columns) > 1:
+        corr_matrix = numeric_df.corr()
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i):
+                if abs(corr_matrix.iloc[i, j]) > 0.7:
+                    col1 = corr_matrix.columns[i]
+                    col2 = corr_matrix.columns[j]
+                    strong_corr_pairs.append(f"{col1} ↔ {col2}")
+                    #insights.append(f"🔗 Strong correlation between '{col1}' and '{col2}'")
+
+    # Display insights
+    if missing_cols:
+        st.warning(f"⚠️ Missing values in: {', '.join(missing_cols)}")
+
+    if high_variance_cols:
+        st.info(f"📊 High variance detected in: {', '.join(high_variance_cols)}")
+
+    if strong_corr_pairs:
+        st.success("🔗 Strong correlations:")
+        for pair in strong_corr_pairs:
+            st.write(f"• {pair}")
+
+    if not (missing_cols or high_variance_cols or strong_corr_pairs):
+        st.success("✅ No major issues detected in dataset") 
+
+    st.markdown("---")
+    st.subheader("🚨 Outlier Detection")
+    if not numeric_df.empty:
+        outlier_col = st.selectbox("Select column for outlier detection", numeric_df.columns)
+
+        Q1 = numeric_df[outlier_col].quantile(0.25)
+        Q3 = numeric_df[outlier_col].quantile(0.75)
+        IQR = Q3 - Q1
+
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+
+        outliers = numeric_df[(numeric_df[outlier_col] < lower_bound) | (numeric_df[outlier_col] > upper_bound)]
+
+        st.write(f"Number of outliers in '{outlier_col}': {outliers.shape[0]}")
+
+        fig, ax = plt.subplots()
+        sns.boxplot(x=numeric_df[outlier_col], ax=ax)
+        st.pyplot(fig)
+
+    st.markdown("---")
+    st.subheader("📌 Column Analysis") 
+
+    col_analysis = st.selectbox("Select column for detailed analysis", df_selected.columns)
+
+    if pd.api.types.is_numeric_dtype(df_selected[col_analysis]):
+        st.write("### Numerical Summary")
+        st.write(df_selected[col_analysis].describe())
+
+        fig, ax = plt.subplots()
+        sns.histplot(df_selected[col_analysis], kde=True, ax=ax)
+        st.pyplot(fig)
+
+    else:
+        st.write("### Categorical Summary")
+        st.write(df_selected[col_analysis].value_counts())
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        top_vals = df_selected[col_analysis].value_counts().nlargest(10)
+        sns.barplot(x=top_vals.values, y=top_vals.index, ax=ax)
+        st.pyplot(fig) 
+
+    
+    st.markdown("---") 
+
+    st.subheader("🛠️ Data Cleaning & Processing")
+    st.markdown("### Handle Missing Values")
+
+    missing_option = st.selectbox(
+        "Choose method",
+        ["None", "Drop Rows", "Fill with Mean", "Fill with Median", "Fill with Mode"]
+    )
+
+    if missing_option != "None":
+        if missing_option == "Drop Rows":
+            df_selected = df_selected.dropna()
+            st.success("Dropped rows with missing values")
+
+        elif missing_option == "Fill with Mean":
+            df_selected = df_selected.fillna(df_selected.mean(numeric_only=True))
+            st.success("Filled missing values with mean")
+
+        elif missing_option == "Fill with Median":
+            df_selected = df_selected.fillna(df_selected.median(numeric_only=True))
+            st.success("Filled missing values with median")
+
+        elif missing_option == "Fill with Mode":
+            df_selected = df_selected.fillna(df_selected.mode().iloc[0])
+            st.success("Filled missing values with mode") 
+        
+    st.markdown("### Remove Duplicates")
+
+    if st.checkbox("Remove duplicate rows"):
+        before = df_selected.shape[0]
+        df_selected = df_selected.drop_duplicates()
+        after = df_selected.shape[0]
+
+        st.success(f"Removed {before - after} duplicate rows") 
+    
+    st.markdown("### Drop Columns")
+
+    cols_to_drop = st.multiselect("Select columns to drop", df_selected.columns)
+
+    if cols_to_drop:
+        df_selected = df_selected.drop(columns=cols_to_drop)
+        st.success(f"Dropped columns: {', '.join(cols_to_drop)}") 
+    
+    st.markdown("### Filter Data")
+
+    filter_col = st.selectbox("Select column to filter", df_selected.columns)
+
+    if pd.api.types.is_numeric_dtype(df_selected[filter_col]):
+        min_val = float(df_selected[filter_col].min())
+        max_val = float(df_selected[filter_col].max())
+
+        selected_range = st.slider(
+            "Select range",
+            min_val,
+            max_val,
+            (min_val, max_val)
+        )
+
+        df_selected = df_selected[
+            (df_selected[filter_col] >= selected_range[0]) &
+            (df_selected[filter_col] <= selected_range[1])
+        ]
+
+    else:
+        selected_values = st.multiselect(
+            "Select values",
+            df_selected[filter_col].unique()
+        )
+
+        if selected_values:
+            df_selected = df_selected[df_selected[filter_col].isin(selected_values)] 
+    
+    st.markdown("### 📄 Updated Dataset Preview")
+    st.dataframe(df_selected.head())
+
+
+
+
+
 
     # Download Cleaned Data
     st.subheader("⬇️ Download Processed Data")
